@@ -1,0 +1,128 @@
+﻿@page "/input-validation"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using SecureApp.Data
+@using SecureApp.Models
+@using SecureApp.Utilities
+@inject AppDbContext DbContext
+
+<h3>InputValidation</h3>
+
+<h2>Users</h2>
+
+@if (users.Count == 0)
+{
+    <p>No users found.</p>
+}
+else
+{
+    <ul>
+        @foreach (var user in users)
+        {
+            <li>@user.Username (@user.Email)</li>
+        }
+    </ul>
+}
+
+<h2>Add User</h2>
+
+<EditForm Model="newUser" OnSubmit="HandleSubmitAsync" FormName="AddUserForm">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div>
+        <label for="username">Username:</label>
+        <InputText id="username" @bind-Value="newUser.Username" />
+    </div>
+
+    <div>
+        <label for="email">Email:</label>
+        <InputText id="email" type="email" @bind-Value="newUser.Email" />
+    </div>
+
+    <button type="submit" disabled="@isSubmitting">Submit</button>
+</EditForm>
+
+@if (errors.Count > 0)
+{
+    <ul class="text-danger">
+        @foreach (var error in errors)
+        {
+            <li>@error</li>
+        }
+    </ul>
+}
+
+@if (!string.IsNullOrWhiteSpace(successMessage))
+{
+    <p class="text-success">@successMessage</p>
+}
+
+@code {
+    private List<User> users = [];
+    private NewUserInput newUser = new();
+    private List<string> errors = [];
+    private string? successMessage;
+    private bool isSubmitting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsersAsync();
+    }
+
+    private async Task HandleSubmitAsync(EditContext _)
+    {
+        if (isSubmitting) return;
+
+        isSubmitting = true;
+        errors.Clear();
+        successMessage = null;
+
+        try
+        {
+            var result = UserInputValidator.ValidateNewUser(newUser.Username, newUser.Email);
+
+            if (!result.IsValid)
+            {
+                errors = result.Errors.ToList();
+                return;
+            }
+
+            DbContext.Users.Add(new User
+            {
+                Username = result.Username,
+                Email = result.Email
+            });
+
+            // This generates a SQL INSERT statement with parameters, preventing SQL injection.
+            await DbContext.SaveChangesAsync();
+
+            newUser = new();
+            successMessage = "User added successfully.";
+            await LoadUsersAsync();
+        }
+        catch (Exception)
+        {
+            errors.Add("Unable to save the user right now.");
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+
+    private async Task LoadUsersAsync()
+    {
+        users = await DbContext.Users
+            .AsNoTracking()
+            .OrderBy(u => u.UserId)
+            .ToListAsync();
+    }
+
+    private sealed class NewUserInput
+    {
+        public string Username { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+    }
+}
